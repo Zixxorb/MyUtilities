@@ -23,5 +23,7 @@ All notable changes to the **MyUtilities Home Assistant Integration** (Cleveland
 - Added cookie session persistence (`aiohttp.CookieJar`) to maintain authenticated portal access across 24-hour update cycles.
 - Added HTML text parser for `data.cfm?appPage=Prepaid` to extract account balance ($), daily electric usage (kWh), daily water usage (gal/CCF), daily usage cost ($), and last meter reading details.
 - Added `hacs.json` for HACS (Home Assistant Community Store) custom repository support.
+- Added AI development disclaimer to `README.md` acknowledging code development with Gemini.
+
 
 

@@ -45,6 +45,14 @@ Custom Home Assistant component that fetches daily utility usage data (electric,
 
 ---
 
+## Disclaimer
+
+> [!NOTE]
+> This Home Assistant custom integration was developed and coded with AI assistance powered by **Gemini** (Google DeepMind). Community contributions, testing, and feedback are welcome!
+
+---
+
 ## Change Log
 
 All modifications and updates to this integration are recorded in [CHANGELOG.md](file:///C:/Users/adabbs/Documents/antigravity/calm-lovelace/CHANGELOG.md).
+
