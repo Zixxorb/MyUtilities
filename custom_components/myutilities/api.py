@@ -47,38 +47,58 @@ class MyUtilitiesApiClient:
         return self._session
 
     async def async_login(self) -> bool:
-        """Authenticate with the MyUsage portal (index.cfm -> data.cfm session)."""
+        """Authenticate with the MyUsage portal (GET initial cookies -> POST credentials)."""
         session = await self._get_session()
 
         headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
+                "Chrome/124.0.0.0 Safari/537.36"
             ),
-            "Content-Type": "application/x-www-form-urlencoded",
-        }
-
-        form_data = {
-            "username": self.username,
-            "password": self.password,
-            "accountNumber": self.account_number or "",
-            "btnSubmit": "Login",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         }
 
         try:
+            # 1. Fetch index page first to establish ColdFusion session cookies
+            async with session.get(MYUSAGE_LOGIN_URL, headers=headers, timeout=15) as get_resp:
+                _LOGGER.debug("Fetched MyUsage login page, status: %s", get_resp.status)
+
+            # 2. Prepare form payload supporting common MyUsage form field names
+            form_data = {
+                "username": self.username,
+                "user": self.username,
+                "txtUsername": self.username,
+                "password": self.password,
+                "pass": self.password,
+                "txtPassword": self.password,
+                "accountNumber": self.account_number or "",
+                "account": self.account_number or "",
+                "btnSubmit": "Login",
+                "submit": "Login",
+            }
+
+            post_headers = {
+                **headers,
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Referer": MYUSAGE_LOGIN_URL,
+            }
+
             async with session.post(
-                MYUSAGE_LOGIN_URL, data=form_data, headers=headers, timeout=15
+                MYUSAGE_LOGIN_URL, data=form_data, headers=post_headers, timeout=15
             ) as response:
                 html_text = await response.text()
+                
                 if response.status in (401, 403) or "Invalid Login" in html_text or "incorrect password" in html_text.lower():
+                    _LOGGER.error("MyUsage login failed: invalid credentials")
                     raise MyUtilitiesAuthError("Invalid username or password for MyUsage")
 
                 self._logged_in = True
-                _LOGGER.info("Successfully authenticated with MyUsage session")
+                _LOGGER.info("Successfully authenticated session with MyUsage portal")
                 return True
+
         except aiohttp.ClientError as err:
-            _LOGGER.error("Network error connecting to MyUsage: %s", err)
+            _LOGGER.error("Network error connecting to MyUsage portal: %s", err)
             raise MyUtilitiesApiError(f"Cannot connect to MyUsage portal: {err}") from err
 
     async def async_validate_credentials(self) -> bool:
@@ -97,67 +117,104 @@ class MyUtilitiesApiClient:
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
+                "Chrome/124.0.0.0 Safari/537.36"
             ),
+            "Referer": MYUSAGE_LOGIN_URL,
         }
 
         try:
             async with session.get(
                 MYUSAGE_DATA_URL, params=params, headers=headers, timeout=20
             ) as response:
+                _LOGGER.debug("Fetched data.cfm response status: %s", response.status)
                 if response.status == 200:
                     html_content = await response.text()
                     parsed_data = self._parse_myusage_html(html_content)
-                    if parsed_data:
-                        return parsed_data
+                    _LOGGER.info("Parsed MyUsage metrics: %s", parsed_data)
+                    return parsed_data
+                elif response.status in (401, 403):
+                    _LOGGER.warning("Session expired, re-authenticating with MyUsage...")
+                    self._logged_in = False
+                    await self.async_login()
         except Exception as err:
-            _LOGGER.warning("Error fetching MyUsage data.cfm: %s. Using default structure.", err)
+            _LOGGER.error("Error fetching MyUsage data.cfm: %s", err)
 
-        return await self.async_fetch_fallback_metrics()
+        return self._get_default_metrics()
 
     def _parse_myusage_html(self, html: str) -> dict[str, Any]:
-        """Extract usage and balance numbers from data.cfm HTML content."""
-        data = {}
+        """Extract usage, cost, balance, and meter numbers from data.cfm HTML content."""
+        data = self._get_default_metrics()
 
-        # Parse Account Balance ($)
-        balance_match = re.search(r"balance[^\$\d]*\$?\s*([0-9]+\.[0-9]{2})", html, re.IGNORECASE)
+        if not html:
+            _LOGGER.warning("Received empty HTML content from MyUsage")
+            return data
+
+        _LOGGER.debug("MyUsage HTML snippet (first 300 chars): %s", html[:300])
+
+        # Parse Account Balance ($) - matches '$123.45', 'Balance: $123.45', 'Balance 123.45'
+        balance_match = (
+            re.search(r"(?:balance|prepay|account balance)[^\$\d]*\$?\s*(-?[0-9,]+\.[0-9]{2})", html, re.IGNORECASE)
+            or re.search(r"\$\s*(-?[0-9,]+\.[0-9]{2})", html)
+        )
         if balance_match:
-            data["account_balance"] = float(balance_match.group(1))
+            try:
+                data["account_balance"] = float(balance_match.group(1).replace(",", ""))
+            except ValueError:
+                pass
 
-        # Parse Electric Usage (kWh)
-        electric_match = re.search(r"([0-9]+\.?[0-9]*)\s*kWh", html, re.IGNORECASE)
+        # Parse Electric Usage (kWh) - matches '32.4 kWh', 'kWh: 32.4', 'Electric 32.4'
+        electric_match = (
+            re.search(r"([0-9,]+\.?[0-9]*)\s*kwh", html, re.IGNORECASE)
+            or re.search(r"electric[^\d]*([0-9,]+\.?[0-9]*)", html, re.IGNORECASE)
+        )
         if electric_match:
-            data["electric_usage"] = float(electric_match.group(1))
+            try:
+                data["electric_usage"] = float(electric_match.group(1).replace(",", ""))
+            except ValueError:
+                pass
 
-        # Parse Water Usage (Gallons / CCF)
-        water_match = re.search(r"([0-9]+\.?[0-9]*)\s*(Gal|Gallons|CCF)", html, re.IGNORECASE)
+        # Parse Water Usage (Gallons / CCF) - matches '145 Gal', '145 Gallons', '14.5 CCF'
+        water_match = (
+            re.search(r"([0-9,]+\.?[0-9]*)\s*(?:gal|gallons|ccf)", html, re.IGNORECASE)
+            or re.search(r"water[^\d]*([0-9,]+\.?[0-9]*)", html, re.IGNORECASE)
+        )
         if water_match:
-            data["water_usage"] = float(water_match.group(1))
+            try:
+                data["water_usage"] = float(water_match.group(1).replace(",", ""))
+            except ValueError:
+                pass
 
-        # Parse Daily Cost ($)
-        cost_match = re.search(r"cost[^\$\d]*\$?\s*([0-9]+\.[0-9]{2})", html, re.IGNORECASE)
+        # Parse Daily Cost ($) - matches 'Cost: $4.85', 'Daily Cost $4.85'
+        cost_match = re.search(r"(?:daily cost|cost|charge)[^\$\d]*\$?\s*([0-9,]+\.[0-9]{2})", html, re.IGNORECASE)
         if cost_match:
-            data["daily_cost"] = float(cost_match.group(1))
+            try:
+                data["daily_cost"] = float(cost_match.group(1).replace(",", ""))
+            except ValueError:
+                pass
 
         # Parse Last Meter Reading & Date
-        meter_match = re.search(r"meter\s*reading[^\d]*([0-9]+\.?[0-9]*)", html, re.IGNORECASE)
+        meter_match = re.search(r"(?:meter|reading)[^\d]*([0-9,]+\.?[0-9]*)", html, re.IGNORECASE)
         if meter_match:
-            data["last_meter_reading"] = float(meter_match.group(1))
+            try:
+                data["last_meter_reading"] = float(meter_match.group(1).replace(",", ""))
+            except ValueError:
+                pass
 
-        date_match = re.search(r"([0-9]{2}/[0-9]{2}/[0-9]{4}|[0-9]{4}-[0-9]{2}-[0-9]{2})", html)
+        date_match = re.search(r"([0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4}|[0-9]{4}-[0-9]{2}-[0-9]{2})", html)
         if date_match:
             data["last_meter_date"] = date_match.group(1)
 
         return data
 
-    async def async_fetch_fallback_metrics(self) -> dict[str, Any]:
-        """Fallback values if session parsing encounters empty page data."""
+    def _get_default_metrics(self) -> dict[str, Any]:
+        """Return default metrics dictionary guaranteeing all keys exist."""
         return {
             "electric_usage": 0.0,
             "water_usage": 0.0,
             "daily_cost": 0.0,
             "account_balance": 0.0,
             "last_meter_reading": 0.0,
-            "last_meter_date": "",
+            "last_meter_date": "N/A",
         }
+
 

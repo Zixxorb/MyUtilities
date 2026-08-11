@@ -52,7 +52,7 @@ SENSOR_DESCRIPTIONS: tuple[MyUtilitiesSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
         icon="mdi:lightning-bolt",
-        value_fn=lambda data: data.get("electric_usage"),
+        value_fn=lambda data: data.get("electric_usage", 0.0),
     ),
     MyUtilitiesSensorEntityDescription(
         key=SENSOR_WATER_USAGE,
@@ -61,7 +61,7 @@ SENSOR_DESCRIPTIONS: tuple[MyUtilitiesSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.WATER,
         state_class=SensorStateClass.TOTAL_INCREASING,
         icon="mdi:water",
-        value_fn=lambda data: data.get("water_usage"),
+        value_fn=lambda data: data.get("water_usage", 0.0),
     ),
     MyUtilitiesSensorEntityDescription(
         key=SENSOR_DAILY_COST,
@@ -70,7 +70,7 @@ SENSOR_DESCRIPTIONS: tuple[MyUtilitiesSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL_INCREASING,
         icon="mdi:currency-usd",
-        value_fn=lambda data: data.get("daily_cost"),
+        value_fn=lambda data: data.get("daily_cost", 0.0),
     ),
     MyUtilitiesSensorEntityDescription(
         key=SENSOR_ACCOUNT_BALANCE,
@@ -78,18 +78,19 @@ SENSOR_DESCRIPTIONS: tuple[MyUtilitiesSensorEntityDescription, ...] = (
         native_unit_of_measurement=CURRENCY_DOLLAR,
         device_class=SensorDeviceClass.MONETARY,
         icon="mdi:account-cash",
-        value_fn=lambda data: data.get("account_balance"),
+        value_fn=lambda data: data.get("account_balance", 0.0),
     ),
     MyUtilitiesSensorEntityDescription(
         key=SENSOR_LAST_METER_READING,
         name="MyUtilities Last Meter Reading",
         icon="mdi:counter",
-        value_fn=lambda data: data.get("last_meter_reading"),
+        value_fn=lambda data: data.get("last_meter_reading", 0.0),
         attributes_fn=lambda data: {
-            "last_meter_read_date": data.get("last_meter_date"),
+            "last_meter_read_date": data.get("last_meter_date", "N/A"),
         },
     ),
 )
+
 
 
 async def async_setup_entry(
