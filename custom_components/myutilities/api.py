@@ -5,13 +5,14 @@ from __future__ import annotations
 import logging
 import re
 from typing import Any
+from urllib.parse import urljoin
 import aiohttp
 
 _LOGGER = logging.getLogger(__name__)
 
 MYUSAGE_BASE_URL = "https://www.myusage.com"
-MYUSAGE_LOGIN_URL = f"{MYUSAGE_BASE_URL}/index.cfm"
-MYUSAGE_DATA_URL = f"{MYUSAGE_BASE_URL}/data.cfm"
+MYUSAGE_LOGIN_URL = f"{MYUSAGE_BASE_URL}/login"
+MYUSAGE_ROOT_URL = f"{MYUSAGE_BASE_URL}/"
 
 
 class MyUtilitiesApiError(Exception):
@@ -23,7 +24,7 @@ class MyUtilitiesAuthError(MyUtilitiesApiError):
 
 
 class MyUtilitiesApiClient:
-    """Asynchronous client for Cleveland Utilities / MyUsage ColdFusion service."""
+    """Asynchronous client for Cleveland Utilities / MyUsage service."""
 
     def __init__(
         self,
@@ -38,6 +39,7 @@ class MyUtilitiesApiClient:
         self.account_number = account_number
         self._session = session
         self._logged_in = False
+        self._data_url: str | None = None
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create an aiohttp ClientSession with cookie storage."""
@@ -47,7 +49,7 @@ class MyUtilitiesApiClient:
         return self._session
 
     async def async_login(self) -> bool:
-        """Authenticate with the MyUsage portal (GET initial cookies -> POST credentials)."""
+        """Authenticate with the MyUsage portal via /login endpoint."""
         session = await self._get_session()
 
         headers = {
@@ -60,43 +62,97 @@ class MyUtilitiesApiClient:
         }
 
         try:
-            # 1. Fetch index page first to establish ColdFusion session cookies
-            async with session.get(MYUSAGE_LOGIN_URL, headers=headers, timeout=15) as get_resp:
-                _LOGGER.debug("Fetched MyUsage login page, status: %s", get_resp.status)
+            # 1. Fetch root page to initialize session and CSRF/session cookies
+            async with session.get(MYUSAGE_ROOT_URL, headers=headers, timeout=15) as root_resp:
+                _LOGGER.debug("Loaded MyUsage home page, status: %s", root_resp.status)
 
-            # 2. Prepare form payload supporting common MyUsage form field names
+            # 2. Submit credentials to /login via XMLHttpRequest
+            login_headers = {
+                "User-Agent": headers["User-Agent"],
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+                "X-Requested-With": "XMLHttpRequest",
+                "Referer": MYUSAGE_ROOT_URL,
+                "Origin": MYUSAGE_BASE_URL,
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            }
+
             form_data = {
-                "username": self.username,
-                "user": self.username,
-                "txtUsername": self.username,
+                "email": self.username,
                 "password": self.password,
-                "pass": self.password,
-                "txtPassword": self.password,
-                "accountNumber": self.account_number or "",
-                "account": self.account_number or "",
-                "btnSubmit": "Login",
-                "submit": "Login",
             }
 
-            post_headers = {
-                **headers,
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Referer": MYUSAGE_LOGIN_URL,
-            }
+            if self.account_number:
+                form_data["uc"] = self.account_number
+
+            _LOGGER.debug("Submitting login request to %s for user %s", MYUSAGE_LOGIN_URL, self.username)
 
             async with session.post(
-                MYUSAGE_LOGIN_URL, data=form_data, headers=post_headers, timeout=15
+                MYUSAGE_LOGIN_URL, data=form_data, headers=login_headers, timeout=20
             ) as response:
-                html_text = await response.text()
-                
-                if response.status in (401, 403) or "Invalid Login" in html_text or "incorrect password" in html_text.lower():
-                    _LOGGER.error("MyUsage login failed: invalid credentials")
+                _LOGGER.debug("Login HTTP response status: %s", response.status)
+
+                if response.status == 200:
+                    try:
+                        res_json = await response.json(content_type=None)
+                        _LOGGER.debug("Login JSON response: %s", res_json)
+                    except Exception:
+                        res_text = await response.text()
+                        _LOGGER.warning("Non-JSON response from /login: %s", res_text[:200])
+                        res_json = {}
+
+                    result = res_json.get("result")
+
+                    if result == "error":
+                        error_msg = res_json.get("error_str") or res_json.get("error_msg") or "Invalid credentials"
+                        _LOGGER.error("MyUsage authentication error: %s", error_msg)
+                        raise MyUtilitiesAuthError(f"MyUsage login failed: {error_msg}")
+
+                    if result == "multi_util":
+                        _LOGGER.info("Multiple utilities found for account; selecting utility...")
+                        utils = res_json.get("data", {}).get("utilities", [])
+                        selected_code = None
+                        if self.account_number:
+                            for u in utils:
+                                if str(u.get("Code")) == str(self.account_number):
+                                    selected_code = u.get("Code")
+                                    break
+                        if not selected_code and utils:
+                            selected_code = utils[0].get("Code")
+
+                        if selected_code:
+                            async with session.post(
+                                MYUSAGE_LOGIN_URL,
+                                data={"uc": selected_code},
+                                headers=login_headers,
+                                timeout=20,
+                            ) as util_resp:
+                                util_json = await util_resp.json(content_type=None)
+                                if util_json.get("redirect_url"):
+                                    self._data_url = urljoin(MYUSAGE_BASE_URL, util_json["redirect_url"])
+                                    self._logged_in = True
+                                    _LOGGER.info("Authenticated multi-utility session; data URL: %s", self._data_url)
+                                    return True
+
+                    redirect_url = res_json.get("redirect_url")
+                    if redirect_url:
+                        self._data_url = urljoin(MYUSAGE_BASE_URL, redirect_url)
+                        self._logged_in = True
+                        _LOGGER.info("Successfully authenticated with MyUsage. Target data URL: %s", self._data_url)
+                        return True
+                    else:
+                        # Fallback data URL if redirect_url not returned in JSON
+                        self._data_url = f"{MYUSAGE_BASE_URL}/data.cfm?appPage=Prepaid"
+                        self._logged_in = True
+                        _LOGGER.info("Authenticated without explicit redirect_url. Using default: %s", self._data_url)
+                        return True
+
+                elif response.status in (401, 403):
                     raise MyUtilitiesAuthError("Invalid username or password for MyUsage")
+                else:
+                    raise MyUtilitiesApiError(f"Unexpected HTTP {response.status} from MyUsage login")
 
-                self._logged_in = True
-                _LOGGER.info("Successfully authenticated session with MyUsage portal")
-                return True
-
+        except MyUtilitiesAuthError:
+            raise
         except aiohttp.ClientError as err:
             _LOGGER.error("Network error connecting to MyUsage portal: %s", err)
             raise MyUtilitiesApiError(f"Cannot connect to MyUsage portal: {err}") from err
@@ -106,12 +162,12 @@ class MyUtilitiesApiClient:
         return await self.async_login()
 
     async def async_get_data(self) -> dict[str, Any]:
-        """Fetch latest utility usage and account data from data.cfm every 24 hours."""
-        if not self._logged_in:
+        """Fetch latest utility usage and account data every 24 hours."""
+        if not self._logged_in or not self._data_url:
             await self.async_login()
 
         session = await self._get_session()
-        params = {"appPage": "Prepaid"}
+        target_url = self._data_url or f"{MYUSAGE_BASE_URL}/data.cfm?appPage=Prepaid"
 
         headers = {
             "User-Agent": (
@@ -119,41 +175,49 @@ class MyUtilitiesApiClient:
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/124.0.0.0 Safari/537.36"
             ),
-            "Referer": MYUSAGE_LOGIN_URL,
+            "Referer": MYUSAGE_ROOT_URL,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         }
 
         try:
-            async with session.get(
-                MYUSAGE_DATA_URL, params=params, headers=headers, timeout=20
-            ) as response:
-                _LOGGER.debug("Fetched data.cfm response status: %s", response.status)
+            _LOGGER.debug("Fetching utility data from: %s", target_url)
+            async with session.get(target_url, headers=headers, timeout=25) as response:
+                _LOGGER.debug("Data page response status: %s", response.status)
+
                 if response.status == 200:
                     html_content = await response.text()
                     parsed_data = self._parse_myusage_html(html_content)
-                    _LOGGER.info("Parsed MyUsage metrics: %s", parsed_data)
+                    _LOGGER.info("Parsed MyUsage utility metrics: %s", parsed_data)
                     return parsed_data
+
                 elif response.status in (401, 403):
                     _LOGGER.warning("Session expired, re-authenticating with MyUsage...")
                     self._logged_in = False
                     await self.async_login()
+                    # Retry with newly established session
+                    async with session.get(self._data_url or target_url, headers=headers, timeout=25) as retry_resp:
+                        if retry_resp.status == 200:
+                            retry_html = await retry_resp.text()
+                            return self._parse_myusage_html(retry_html)
+
         except Exception as err:
-            _LOGGER.error("Error fetching MyUsage data.cfm: %s", err)
+            _LOGGER.error("Error fetching MyUsage utility data: %s", err)
 
         return self._get_default_metrics()
 
     def _parse_myusage_html(self, html: str) -> dict[str, Any]:
-        """Extract usage, cost, balance, and meter numbers from data.cfm HTML content."""
+        """Extract usage, cost, balance, and meter values from portal HTML."""
         data = self._get_default_metrics()
 
         if not html:
-            _LOGGER.warning("Received empty HTML content from MyUsage")
+            _LOGGER.warning("Received empty HTML content from MyUsage portal")
             return data
 
-        _LOGGER.debug("MyUsage HTML snippet (first 300 chars): %s", html[:300])
+        _LOGGER.debug("MyUsage HTML snippet: %s", html[:400])
 
-        # Parse Account Balance ($) - matches '$123.45', 'Balance: $123.45', 'Balance 123.45'
+        # 1. Parse Account Balance ($)
         balance_match = (
-            re.search(r"(?:balance|prepay|account balance)[^\$\d]*\$?\s*(-?[0-9,]+\.[0-9]{2})", html, re.IGNORECASE)
+            re.search(r"(?:balance|prepay|account balance)[^\$\d\-]*\$?\s*(-?[0-9,]+\.[0-9]{2})", html, re.IGNORECASE)
             or re.search(r"\$\s*(-?[0-9,]+\.[0-9]{2})", html)
         )
         if balance_match:
@@ -162,7 +226,7 @@ class MyUtilitiesApiClient:
             except ValueError:
                 pass
 
-        # Parse Electric Usage (kWh) - matches '32.4 kWh', 'kWh: 32.4', 'Electric 32.4'
+        # 2. Parse Electric Usage (kWh)
         electric_match = (
             re.search(r"([0-9,]+\.?[0-9]*)\s*kwh", html, re.IGNORECASE)
             or re.search(r"electric[^\d]*([0-9,]+\.?[0-9]*)", html, re.IGNORECASE)
@@ -173,7 +237,7 @@ class MyUtilitiesApiClient:
             except ValueError:
                 pass
 
-        # Parse Water Usage (Gallons / CCF) - matches '145 Gal', '145 Gallons', '14.5 CCF'
+        # 3. Parse Water Usage (Gallons / CCF)
         water_match = (
             re.search(r"([0-9,]+\.?[0-9]*)\s*(?:gal|gallons|ccf)", html, re.IGNORECASE)
             or re.search(r"water[^\d]*([0-9,]+\.?[0-9]*)", html, re.IGNORECASE)
@@ -184,15 +248,15 @@ class MyUtilitiesApiClient:
             except ValueError:
                 pass
 
-        # Parse Daily Cost ($) - matches 'Cost: $4.85', 'Daily Cost $4.85'
-        cost_match = re.search(r"(?:daily cost|cost|charge)[^\$\d]*\$?\s*([0-9,]+\.[0-9]{2})", html, re.IGNORECASE)
+        # 4. Parse Daily Cost ($)
+        cost_match = re.search(r"(?:daily cost|today'?s? cost|cost|charge)[^\$\d]*\$?\s*([0-9,]+\.[0-9]{2})", html, re.IGNORECASE)
         if cost_match:
             try:
                 data["daily_cost"] = float(cost_match.group(1).replace(",", ""))
             except ValueError:
                 pass
 
-        # Parse Last Meter Reading & Date
+        # 5. Parse Last Meter Reading & Date
         meter_match = re.search(r"(?:meter|reading)[^\d]*([0-9,]+\.?[0-9]*)", html, re.IGNORECASE)
         if meter_match:
             try:
@@ -207,7 +271,7 @@ class MyUtilitiesApiClient:
         return data
 
     def _get_default_metrics(self) -> dict[str, Any]:
-        """Return default metrics dictionary guaranteeing all keys exist."""
+        """Return default metrics dictionary ensuring all keys exist."""
         return {
             "electric_usage": 0.0,
             "water_usage": 0.0,
@@ -216,5 +280,6 @@ class MyUtilitiesApiClient:
             "last_meter_reading": 0.0,
             "last_meter_date": "N/A",
         }
+
 
 

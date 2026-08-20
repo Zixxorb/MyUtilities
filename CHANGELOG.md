@@ -5,6 +5,14 @@ All notable changes to the **MyUtilities Home Assistant Integration** (Cleveland
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-08-20
+
+### Fixed
+- Fixed authentication failure caused by posting to `/index.cfm` (which returned HTTP 404).
+- Switched to the live MyUsage AJAX authentication endpoint `https://www.myusage.com/login` with `X-Requested-With: XMLHttpRequest` and `email` / `password` parameters.
+- Implemented parsing of JSON login responses, handling `multi_util` utility selection, and dynamically retrieving the authenticated user's `redirect_url` containing the session token / `appFlow` parameter.
+- Enhanced HTML extraction regex for balance, electric usage (kWh), water usage (Gallons/CCF), daily cost, and meter readings.
+
 ## [1.0.2] - 2026-08-11
 
 ### Fixed
@@ -13,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `_parse_myusage_html()` with broader regex patterns matching MyUsage HTML structures (e.g., `Balance: $XX.XX`, `kWh`, `Gallons`, `CCF`, `Cost`).
 - Added guaranteed default value fallbacks (`0.0` / `"N/A"`) across `api.py` and `sensor.py` so entities always initialize with valid state.
 - Added debug and error logging for session requests and HTML parsing.
+
 
 ## [1.0.1] - 2026-07-24
 
