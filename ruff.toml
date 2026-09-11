@@ -1,0 +1,22 @@
+# Mirrors the subset of Home Assistant core's ruff config that matters for a
+# custom integration.
+target-version = "py313"
+line-length = 88
+
+[lint]
+select = [
+    "E", "F", "W",      # pycodestyle / pyflakes
+    "I",                # import sorting
+    "UP",               # pyupgrade
+    "B",                # bugbear
+    "ASYNC",            # async pitfalls, e.g. blocking calls in the event loop
+    "RUF",
+    "SIM",
+    "D",                # docstrings, which hassfest-adjacent tooling expects
+]
+ignore = [
+    "D203", "D213",
+]
+
+[lint.pydocstyle]
+convention = "pep257"

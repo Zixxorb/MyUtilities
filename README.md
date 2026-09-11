@@ -52,7 +52,7 @@ MyUtilities daily energy charge statistic as a cost.
 ### HACS
 
 1. HACS → ⋮ → **Custom repositories**
-2. Add `https://github.com/YOUR_GITHUB_USERNAME/MyUtilities`, category
+2. Add `https://github.com/Zixxorb/MyUtilities`, category
    **Integration**
 3. Search for **MyUtilities**, download, restart Home Assistant
 
@@ -180,6 +180,6 @@ MIT — see [LICENSE](LICENSE).
 
 [hacs-badge]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg
 [hacs-url]: https://github.com/hacs/integration
-[validate-badge]: https://github.com/YOUR_GITHUB_USERNAME/MyUtilities/actions/workflows/validate.yml/badge.svg
-[validate-url]: https://github.com/YOUR_GITHUB_USERNAME/MyUtilities/actions/workflows/validate.yml
-[issues-url]: https://github.com/YOUR_GITHUB_USERNAME/MyUtilities/issues
+[validate-badge]: https://github.com/Zixxorb/MyUtilities/actions/workflows/validate.yml/badge.svg
+[validate-url]: https://github.com/Zixxorb/MyUtilities/actions/workflows/validate.yml
+[issues-url]: https://github.com/Zixxorb/MyUtilities/issues

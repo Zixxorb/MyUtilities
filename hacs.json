@@ -1,6 +1,6 @@
 {
   "name": "MyUtilities (Cleveland Utilities)",
+  "homeassistant": "2026.9.0",
   "render_readme": true,
-  "filename": "custom_components/myutilities/manifest.json",
   "country": ["US"]
 }

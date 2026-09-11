@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Never commit portal captures - they contain credentials and personal data.
+*.har
+myusage_dump/
