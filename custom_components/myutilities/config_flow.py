@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import aiohttp
+import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
-
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
@@ -17,7 +17,6 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
-import homeassistant.helpers.config_validation as cv
 
 from .api import MyUtilitiesApiClient, MyUtilitiesApiError, MyUtilitiesAuthError
 from .const import (
@@ -68,14 +67,14 @@ class MyUtilitiesConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
         try:
-            await client.async_validate_credentials()
+            await client.async_login()
         except MyUtilitiesAuthError as err:
             _LOGGER.debug("Auth rejected: %s", err)
             return {"base": "invalid_auth"}
         except MyUtilitiesApiError as err:
             _LOGGER.debug("Connection problem: %s", err)
             return {"base": "cannot_connect"}
-        except Exception:  # noqa: BLE001 - config flows must not raise
+        except Exception:
             _LOGGER.exception("Unexpected error validating MyUtilities credentials")
             return {"base": "unknown"}
 
