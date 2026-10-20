@@ -20,3 +20,11 @@ ignore = [
 
 [lint.pydocstyle]
 convention = "pep257"
+
+[lint.per-file-ignores]
+# Test names describe themselves; forcing a docstring on top of a name like
+# test_year_inference_for_partial_dates adds nothing.
+"tests/*" = ["D100", "D103"]
+# Standalone developer tools, not part of the component.
+"probe_v2.py" = ["D103"]
+"scrub_har.py" = ["D103"]

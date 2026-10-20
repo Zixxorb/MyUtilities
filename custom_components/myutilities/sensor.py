@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
+import homeassistant.util.dt as dt_util
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -18,7 +19,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-import homeassistant.util.dt as dt_util
 
 from .const import CURRENCY_USD, DOMAIN
 from .coordinator import MyUtilitiesConfigEntry, MyUtilitiesCoordinator
@@ -35,7 +35,7 @@ def _midnight(day: date | None) -> datetime | None:
 
 
 def _latest(summary: PrepaidSummary) -> Any:
-    """The most recent day in the thirty-day chart, if present."""
+    """Return the most recent day in the thirty-day chart, if present."""
     return summary.daily_charges[-1] if summary.daily_charges else None
 
 

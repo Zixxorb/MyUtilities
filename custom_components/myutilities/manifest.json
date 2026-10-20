@@ -1,13 +1,20 @@
 {
   "domain": "myutilities",
   "name": "MyUtilities (Cleveland Utilities)",
-  "codeowners": ["@Zixxorb"],
+  "codeowners": [
+    "@Zixxorb"
+  ],
   "config_flow": true,
+  "dependencies": [
+    "recorder"
+  ],
   "documentation": "https://github.com/Zixxorb/MyUtilities",
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/Zixxorb/MyUtilities/issues",
-  "loggers": ["custom_components.myutilities"],
+  "loggers": [
+    "custom_components.myutilities"
+  ],
   "requirements": [],
   "version": "2.0.1"
 }

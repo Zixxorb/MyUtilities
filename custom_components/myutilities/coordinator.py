@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import timedelta
-import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -62,7 +62,7 @@ class MyUtilitiesCoordinator(DataUpdateCoordinator[PrepaidSummary]):
                 await async_import_daily_charges(
                     self.hass, self.config_entry, summary.daily_charges
                 )
-            except Exception as err:  # noqa: BLE001
+            except Exception as err:
                 _LOGGER.warning(
                     "Could not import daily charge statistics: %s", err
                 )

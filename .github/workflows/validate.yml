@@ -25,6 +25,9 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
+          # The brands check requires a PR to home-assistant/brands, which is
+          # a separate process. Remove this line once that PR is merged.
+          ignore: brands
 
   lint:
     name: ruff

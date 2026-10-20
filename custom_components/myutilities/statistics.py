@@ -12,9 +12,10 @@ running sum, because that is what the recorder needs to compute deltas.
 
 from __future__ import annotations
 
-from datetime import datetime
 import logging
+from datetime import datetime
 
+import homeassistant.util.dt as dt_util
 from homeassistant.components.recorder.models import (
     StatisticData,
     StatisticMetaData,
@@ -26,7 +27,6 @@ from homeassistant.components.recorder.statistics import (
 from homeassistant.components.recorder.util import get_instance
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-import homeassistant.util.dt as dt_util
 
 from .const import CURRENCY_USD, DOMAIN, STAT_DAILY_CHARGE
 from .parser import DailyCharge

@@ -25,13 +25,12 @@ That's the most valuable thing on the page and is extracted separately.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import date, datetime
 import html as html_module
 import json
 import logging
 import re
-from typing import Any
+from dataclasses import dataclass, field
+from datetime import date, datetime
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -94,6 +93,17 @@ def _cents(raw: str) -> float | None:
     """Parse 'rated at 11.62¢ per kWh' into 11.62."""
     match = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*(?:¢|cent)", raw, re.IGNORECASE)
     return float(match.group(1)) if match else None
+
+
+def _opt_float(row: dict, key: str) -> float | None:
+    """Read an optional numeric field out of a chart row."""
+    value = row.get(key)
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _partial_date(raw: str, today: date | None = None) -> date | None:
@@ -203,19 +213,12 @@ def parse_chart_data(page: str) -> list[DailyCharge]:
         except (TypeError, ValueError):
             continue
 
-        def _opt(key: str) -> float | None:
-            value = row.get(key)
-            try:
-                return float(value) if value is not None else None
-            except (TypeError, ValueError):
-                return None
-
         charges.append(
             DailyCharge(
                 day=day,
                 charge=charge,
-                temp_high=_opt("TempHigh"),
-                temp_low=_opt("TempLow"),
+                temp_high=_opt_float(row, "TempHigh"),
+                temp_low=_opt_float(row, "TempLow"),
             )
         )
 

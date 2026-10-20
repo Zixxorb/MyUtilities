@@ -27,7 +27,7 @@ try:
 except ImportError:
     print("Missing dependency. Run:  pip install requests")
     input("\nPress Enter to close...")
-    raise SystemExit(1)
+    raise SystemExit(1) from None
 
 PAYMENTS_BASE = "https://myusagepayments.com"
 UA = (
@@ -83,7 +83,7 @@ def dump(name: str, resp, do_redact: bool = True) -> None:
 
 
 def show_redirects(resp) -> None:
-    """The redirect chain is the single most useful thing here."""
+    """Print the redirect chain, which is the most useful thing here."""
     if resp.history:
         say("  redirect chain:")
         for hop in resp.history:
@@ -95,7 +95,7 @@ def show_redirects(resp) -> None:
 
 
 def find_client_side_redirect(html: str) -> str | None:
-    """The /utility/CODE page says 'Redirecting...' - find out where to."""
+    """Find where the 'Redirecting...' landing page actually sends us."""
     patterns = (
         r"""<meta[^>]+http-equiv=["']refresh["'][^>]+content=["'][^"']*url=([^"']+)["']""",
         r"""window\.location(?:\.href|\.replace\()?\s*=?\s*['"]([^'"]+)['"]""",
@@ -313,7 +313,7 @@ def main() -> int:
     except KeyboardInterrupt:
         say("\nCancelled.")
         exit_code = 1
-    except Exception:  # noqa: BLE001 - the whole point is to show the error
+    except Exception:
         say("\n" + "!" * 60)
         say("The probe crashed. Full traceback:")
         say(traceback.format_exc())

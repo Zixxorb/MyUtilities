@@ -10,12 +10,11 @@ and personal details stripped out.
 from __future__ import annotations
 
 import re
+from dataclasses import asdict, is_dataclass
 from typing import Any
 
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.core import HomeAssistant
-
-from dataclasses import asdict, is_dataclass
 
 from .const import CONF_PASSWORD, CONF_USERNAME
 from .coordinator import MyUtilitiesConfigEntry
