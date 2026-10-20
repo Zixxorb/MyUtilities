@@ -29,7 +29,6 @@ import argparse
 import json
 import pathlib
 import re
-import sys
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 SECRET_FIELD = re.compile(

@@ -9,10 +9,10 @@ as sensors quietly going unknown.
 
 from __future__ import annotations
 
-from datetime import date
 import importlib.util
 import pathlib
 import sys
+from datetime import date
 
 # Load parser.py directly rather than importing the package: the package
 # __init__ pulls in homeassistant and aiohttp, while the parser itself is
